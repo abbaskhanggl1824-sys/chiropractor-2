@@ -1,0 +1,8 @@
+# Hyper-Personalized AI Contact Form Bot (Chiropractors Edition)
+# Dependencies for automated form-filling and AI personalization
+
+google-generativeai>=0.8.0
+gspread>=6.1.0
+google-auth>=2.29.0
+playwright>=1.42.0
+2captcha-python>=3.0.0
