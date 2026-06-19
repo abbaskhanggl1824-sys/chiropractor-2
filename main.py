@@ -11,6 +11,7 @@ import base64
 import time
 import logging
 import sys
+import traceback
 from datetime import datetime
 
 import google.generativeai as genai
@@ -23,10 +24,10 @@ import twocaptcha
 #  CONFIGURATION - GitHub Secrets se aata hai
 # ------------------------------------------
 
-GEMINI_API_KEY      = os.environ["GEMINI_API_KEY"]
-CAPTCHA_API_KEY     = os.environ["CAPTCHA_API_KEY"]
-GOOGLE_SHEET_ID     = os.environ["GOOGLE_SHEET_ID"]
-GOOGLE_CREDS_JSON   = os.environ["GOOGLE_CREDS_JSON"]
+GEMINI_API_KEY      = os.environ["GEMINI_API_KEY"].strip()
+CAPTCHA_API_KEY     = os.environ["CAPTCHA_API_KEY"].strip()
+GOOGLE_SHEET_ID     = os.environ["GOOGLE_SHEET_ID"].strip()
+GOOGLE_CREDS_JSON   = os.environ["GOOGLE_CREDS_JSON"].strip()
 
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel("gemini-3.1-flash-lite")
@@ -39,10 +40,10 @@ COMPANY     = "LocalTuneUp"
 EMAIL       = "salman@localtuneup.com"
 PHONE       = "+918889652586"
 
-# 🎯 NEW: Updated for Chiropractors
+# 🎯 Updated for Chiropractors
 SUBJECT_TEMPLATE = "Chiropractic practice visibility in {city} (Quick Question)"
 
-# 🎯 NEW: Updated Pitch for Chiropractic & Wellness Patients
+# 🎯 Updated Pitch for Chiropractic & Wellness Patients
 MESSAGE_TEMPLATE = "Hi,\n\n{intro}\n\nMany prospective patients now start their search through Google Maps, AI Overviews and ChatGPT recommendations before booking an appointment.\n\nWe're helping chiropractic practices strengthen their visibility across those channels through local authority signals, citations and wellness-industry placements.\n\nWould you be open to a quick conversation?\n\nWarm Regards,\n\nSalman Khan\nLocalTuneUp.com"
 
 PROCESS_LIMIT = None
@@ -66,7 +67,7 @@ log = logging.getLogger(__name__)
 # ------------------------------------------
 
 def init_sheets():
-    creds_dict = json.loads(GOOGLE_CREDS_JSON)
+    creds_dict = json.loads(GOOGLE_CREDS_JSON.strip())
     creds = Credentials.from_service_account_info(creds_dict, scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(GOOGLE_SHEET_ID)
@@ -182,19 +183,12 @@ def get_page_text(page):
     except: return ""
 
 def generate_personalized_line(page, website, city):
-    """
-    Super-charged AI prompt: Scrapes the chiropractor's website to find the actual practice 
-    name and specific therapeutic focus to create a natural, customized hook.
-    """
     site_text = get_page_text(page)
-    
-    # Backup line for Chiropractors
     backup_line = f"I noticed your clinic focuses on professional chiropractic care and spinal health for patients throughout {city}."
     
     if len(site_text.strip()) < 50:
         return backup_line
 
-    # AI Prompt targeting Chiropractic and Spine Clinics
     prompt = """You are an expert copywriter writing a personalized opening line for a B2B sales message.
 Target Audience: A Chiropractor, Spine Specialist, Physical Therapist, or Wellness Clinic located in or serving the city of '{city}'.
 
@@ -219,7 +213,9 @@ Example Output: I noticed Back in Motion Chiropractic focuses on advanced spinal
     for attempt in range(3):
         try:
             resp = gemini_model.generate_content(prompt)
-            raw = (resp.text or "").strip()
+            if not resp or not resp.text:
+                continue
+            raw = resp.text.strip()
             if raw:
                 line = raw.replace("```", "").strip().strip('"').strip("'").strip().split("\n")[0]
                 if len(line.split()) > 5 and len(line) < 200:
@@ -253,12 +249,23 @@ Return ONLY a JSON array of actions. Format:
     
     prompt = prompt.format(website=website, html=page_html, full_name=FULL_NAME, email=EMAIL, phone=PHONE, subject=subject, message=message)
     
-    resp = gemini_model.generate_content(prompt)
-    raw = resp.text.strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"): raw = raw[4:]
-    return json.loads(raw.strip())
+    try:
+        resp = gemini_model.generate_content(prompt)
+        if not resp or not resp.text:
+            return []
+            
+        raw = resp.text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"): raw = raw[4:]
+            
+        if not raw.strip():
+            return []
+            
+        return json.loads(raw.strip())
+    except Exception as e:
+        log.error(f"Failed to parse Gemini Form Response safely: {e}")
+        return []
 
 def get_page_html(page):
     try:
@@ -268,6 +275,9 @@ def get_page_html(page):
 def execute_actions(page, actions):
     filled = []
     submitted = False
+    if not actions:
+        return filled, submitted
+        
     for action in actions:
         act = action.get("action", "").lower()
         sel = action.get("selector", "")
@@ -302,44 +312,4 @@ def main():
         pg = context.new_page()
         pg.set_default_timeout(20000)
 
-        for row_idx, row_data in pending[:PROCESS_LIMIT]:
-            website = normalise_url(row_data.get("website", ""))
-            city = str(row_data.get("city", "Phoenix")).strip() or "Phoenix"
-            log.info(f"\nProcessing: {website} ({city})")
-
-            try:
-                pg.goto(website, timeout=25000, wait_until="domcontentloaded")
-                time.sleep(2)
-                dismiss_cookie_banner(pg)
-
-                # Step 1: AI scans homepage for super personalization
-                intro_line = generate_personalized_line(pg, website, city)
-                
-                current_subject = SUBJECT_TEMPLATE.format(city=city)
-                current_message = MESSAGE_TEMPLATE.format(intro=intro_line)
-
-                # Step 2: Move to contact page
-                find_contact_page(pg, website)
-                dismiss_cookie_banner(pg)
-                solve_captcha(pg, website)
-
-                # Step 3: Fill form using Gemini AI
-                actions = ask_gemini(pg, website, current_subject, current_message)
-                filled, submitted = execute_actions(pg, actions)
-
-                status = "submitted" if submitted else ("filled_not_submitted" if filled else "no_form_found")
-                update_sheet_row(ws, row_idx, status, notes="OK" if submitted else "Check form", fields_filled=", ".join(filled))
-                
-                # Gemini API 429 Rate Limit fix
-                log.info("Waiting 8 seconds to avoid Gemini API Rate Limit...")
-                time.sleep(8)
-
-            except Exception as e:
-                log.error(f"Error on {website}: {e}")
-                update_sheet_row(ws, row_idx, "error", notes=str(e)[:50])
-                time.sleep(5)
-
-        browser.close()
-
-if __name__ == "__main__":
-    main()
+        for row_idx, row
