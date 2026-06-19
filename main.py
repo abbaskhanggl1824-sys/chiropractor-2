@@ -312,4 +312,59 @@ def main():
         pg = context.new_page()
         pg.set_default_timeout(20000)
 
-        for row_idx, row
+        for row_idx, row_data in pending[:PROCESS_LIMIT]:
+            website = normalise_url(row_data.get("website", ""))
+            city = str(row_data.get("city", "Phoenix")).strip() or "Phoenix"
+            log.info(f"\nProcessing: {website} ({city})")
+
+            try:
+                pg.goto(website, timeout=25000, wait_until="domcontentloaded")
+                time.sleep(2)
+                dismiss_cookie_banner(pg)
+
+                # Step 1: AI scans homepage for super personalization
+                intro_line = generate_personalized_line(pg, website, city)
+                
+                current_subject = SUBJECT_TEMPLATE.format(city=city)
+                current_message = MESSAGE_TEMPLATE.format(intro=intro_line)
+
+                # Step 2: Move to contact page
+                find_contact_page(pg, website)
+                dismiss_cookie_banner(pg)
+                solve_captcha(pg, website)
+
+                # Step 3: Fill form using Gemini AI
+                actions = ask_gemini(pg, website, current_subject, current_message)
+                filled, submitted = execute_actions(pg, actions)
+
+                status = "submitted" if submitted else ("filled_not_submitted" if filled else "no_form_found")
+                update_sheet_row(ws, row_idx, status, notes="OK" if submitted else "Check form", fields_filled=", ".join(filled))
+                
+                # 🛠️ UPDATED: 15 seconds loop delay to prevent Gemini API 429 Rate limits
+                log.info("Waiting 15 seconds to safely avoid Gemini API Quota limits...")
+                time.sleep(15)
+
+            except Exception as e:
+                log.error(f"Error on {website}: {e}")
+                update_sheet_row(ws, row_idx, "error", notes=str(e)[:50])
+                
+                # 🛠️ UPDATED: 15 seconds error block delay
+                log.info("Waiting 15 seconds after error to recover...")
+                time.sleep(15)
+
+        browser.close()
+
+# ------------------------------------------
+#  🚨 GLOBAL ERROR CATCHER
+# ------------------------------------------
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as global_err:
+        print("\n" + "="*50)
+        print("🚨 !!! CRITICAL GLOBAL ERROR ENCOUNTERED !!! 🚨")
+        print(f"Error Message: {global_err}")
+        print("="*50)
+        traceback.print_exc()
+        print("="*50 + "\n")
+        sys.exit(1)
