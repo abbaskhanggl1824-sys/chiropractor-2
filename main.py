@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Hyper-Personalized AI Contact & Consultation Form Bot (Plastic Surgery & Chiropractor Edition)
+Hyper-Personalized AI Contact & Consultation Form Bot (Dentist Edition)
 - Powered by: LocalTuneUp (Salman Khan)
 - Core Fixes: Artifact Missing Folder Fix (Prevents Exit Code 1 on Upload-Artifact Step), Fail-Safe Core, Context Timeout (45s)
 """
@@ -72,7 +72,7 @@ EMAIL       = "salman@localtuneup.com"
 PHONE       = "+918889652586"
 
 SUBJECT_TEMPLATE = "Practice visibility in {city} (Quick Question)"
-MESSAGE_TEMPLATE = "Hi,\n\n{intro}\n\nMany prospective patients now start their search through Google Maps, AI Overviews and ChatGPT recommendations before booking an appointment.\n\nWe're helping local practices strengthen their visibility across those channels through local authority signals, citations and industry placements.\n\nWould you be open to a quick conversation?\n\nWarm Regards,\n\nSalman Khan\nLocalTuneUp.com"
+MESSAGE_TEMPLATE = "Hi,\n\n{intro}\n\nMany prospective patients now start their search for a plastic surgeon through Google Maps, AI Overviews and ChatGPT recommendations before booking a consultation.\n\nWe're helping plastic surgery practices strengthen their visibility across those channels through local authority signals, citations and industry placements.\n\nWould you be open to a quick conversation?\n\nWarm Regards,\n\nSalman Khan\nLocalTuneUp.com"
 
 PROCESS_LIMIT = None
 
@@ -225,20 +225,20 @@ def generate_personalized_line(page, website, city):
     site_text = get_page_text(page)
     text_lower = site_text.lower()
     
-    if any(k in text_lower for k in ["chiropractor", "chiropractic", "spinal", "back pain", "neck pain", "adjustment"]):
-        backup_line = f"I noticed your clinic focuses on advanced chiropractic care and spinal adjustments for patients throughout {city}."
-    elif any(k in text_lower for k in ["plastic", "cosmetic", "surgery", "surgeon", "reconstructive"]):
-        backup_line = f"I noticed your practice focuses on professional cosmetic and plastic surgery procedures for patients throughout {city}."
-    elif any(k in text_lower for k in ["medspa", "aesthetics", "botox"]):
-        backup_line = f"I noticed your clinic focuses on advanced aesthetic treatments and medical spa services for clients throughout {city}."
+    if any(k in text_lower for k in ["implant", "dental implant", "all-on-4", "all on 4"]):
+        backup_line = f"I noticed your practice focuses on dental implants and advanced restorative care for patients throughout {city}."
+    elif any(k in text_lower for k in ["orthodont", "braces", "invisalign", "aligner"]):
+        backup_line = f"I noticed your practice focuses on orthodontics and smile alignment treatments for patients throughout {city}."
+    elif any(k in text_lower for k in ["cosmetic", "veneers", "teeth whitening", "smile makeover"]):
+        backup_line = f"I noticed your practice focuses on cosmetic dentistry and smile makeovers for patients throughout {city}."
     else:
-        backup_line = f"I noticed your clinic focuses on dedicated patient care and high-quality healthcare services throughout {city}."
+        backup_line = f"I noticed your practice focuses on dedicated dental care and high-quality patient services throughout {city}."
         
     if len(site_text.strip()) < 50 or not GEMINI_API_KEY:
         return backup_line
 
     prompt = """You are an expert copywriter writing a personalized opening line for a B2B sales message.
-Target Audience: A Chiropractor, Plastic Surgeon, or Medical Practice located in or serving the city of '{city}'.
+Target Audience: A Dentist or Dental Practice located in or serving the city of '{city}'.
 
 Here is the scraped text from their website ({website}):
 ---
@@ -247,9 +247,9 @@ Here is the scraped text from their website ({website}):
 
 Your task is to draft exactly ONE natural, high-converting opening sentence.
 Rules:
-1. Find the actual Practice or Doctor Name from the text. If not clear, use "your practice".
-2. Identify their primary treatment focus or specialty.
-3. Format style: "I noticed [Clinic Name/your practice] focuses on [Specialty/Service] for patients throughout {city}."
+1. Find the actual Practice or Dentist Name from the text. If not clear, use "your practice".
+2. Identify their primary dental focus or specialty.
+3. Format style: "I noticed [Practice Name/your practice] focuses on [Specialty/Service] for patients throughout {city}."
 4. Under 25 words. Return ONLY the line, no quotes, no markdown."""
 
     prompt = prompt.format(website=website, site_text=site_text, city=city)
@@ -399,7 +399,7 @@ def main():
 
     pending = get_pending_rows(ws)
     if not pending: 
-        log.info("No pending surgery/chiropractor leads found inside Google Sheets.")
+        log.info("No pending dental leads found inside Google Sheets.")
         return
 
     try:
